@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DISCOVER } from "../src/config.js";
-import { locationTier, preFilter } from "../src/jobs/hardFilters.js";
+import { locationTier, preFilter, type Where } from "../src/jobs/hardFilters.js";
 import type { Job } from "../src/jobs/normalize.js";
 import { FIT_QUESTIONS, fitQuestions, scoreFromAnswers } from "../src/jobs/rate.js";
 import { usStatus } from "../src/profile/schema.js";
@@ -12,21 +12,25 @@ const job = (over: Partial<Job> = {}): Job => ({
   locations: ["Toronto, ON, Canada"], postedAt: "2026-10-01", terms: ["Summer 2027"], sponsorship: "unknown", degrees: [], category: null, ...over,
 });
 
+/** A candidate who lives in Canada, may work only there, and wants Vancouver first. */
+const CANADIAN: Where = { home: "Canada", places: ["Vancouver", "Burnaby"], authorized: ["Canada"], citizenOf: ["Canada"] };
+
 describe("locationTier", () => {
   it.each([
-    [["Vancouver, BC, Canada"], "vancouver"],
-    [["Burnaby, BC"], "vancouver"],
-    [["Toronto, ON"], "canada"],
-    [["Montreal, QC, Canada"], "canada"],
+    [["Vancouver, BC, Canada"], "local"],
+    [["Burnaby, BC"], "local"],
+    [["Toronto, ON"], "home"],
+    [["Montreal, QC, Canada"], "home"],
     [["Remote"], "remote"],
-    [["Remote in USA"], "us"],
-    [["SF"], "us"],
-    [["NYC"], "us"],
-    [["Palo Alto, CA"], "us"],
-    [["London, UK"], "international"],
+    [["Remote in USA"], "abroad"],
+    [["SF"], "abroad"],
+    [["NYC"], "abroad"],
+    [["Palo Alto, CA"], "abroad"],
+    [["London, UK"], "abroad"],
+    [["Somewhere unknown"], "unclear"],
     [[], "unclear"],
   ])("%j → %s", (locs, tier) => {
-    expect(locationTier(locs)).toBe(tier);
+    expect(locationTier(locs, CANADIAN)).toBe(tier);
   });
 });
 
@@ -94,15 +98,15 @@ describe("scoreFromAnswers", () => {
     for (const k of Object.keys(answers())) expect(FIT_QUESTIONS).toHaveProperty(k);
   });
   it("queues a strong, fresh Canadian internship", () => {
-    const fit = scoreFromAnswers(job(), answers(), now);
+    const fit = scoreFromAnswers(job(), answers(), now, CANADIAN);
     expect(fit.decision).toBe("apply");
     expect(fit.score).toBeGreaterThan(DISCOVER.applyThreshold);
-    expect(fit.locationTier).toBe("canada");
+    expect(fit.locationTier).toBe("home");
   });
   it("ranks Vancouver above the same job in the US, and fresh above stale", () => {
-    const van = scoreFromAnswers(job({ locations: ["Vancouver, BC"] }), answers(), now).score;
-    const us = scoreFromAnswers(job({ locations: ["Austin, TX"] }), answers({ work_auth: { choice: "us_sponsors" } }), now).score;
-    const stale = scoreFromAnswers(job({ locations: ["Vancouver, BC"], postedAt: "2026-09-19" }), answers(), now).score;
+    const van = scoreFromAnswers(job({ locations: ["Vancouver, BC"] }), answers(), now, CANADIAN).score;
+    const us = scoreFromAnswers(job({ locations: ["Austin, TX"] }), answers({ work_auth: { choice: "us_sponsors" } }), now, CANADIAN).score;
+    const stale = scoreFromAnswers(job({ locations: ["Vancouver, BC"], postedAt: "2026-09-19" }), answers(), now, CANADIAN).score;
     expect(van).toBeGreaterThan(us);
     expect(van).toBeGreaterThan(stale);
   });
@@ -111,10 +115,13 @@ describe("scoreFromAnswers", () => {
     expect(scoreFromAnswers(job(), answers({ level: { choice: "experienced", confidence: 0.9 } }), now).skipReason).toMatch(/experience/);
     expect(scoreFromAnswers(job(), answers({ is_unpaid: { noul: 0.9 } }), now).skipReason).toBe("unpaid");
     expect(scoreFromAnswers(job(), answers({ needs_advanced_degree: { noul: 0.9 } }), now).skipReason).toMatch(/degree/);
-    expect(scoreFromAnswers(job({ locations: ["SF"] }), answers({ work_auth: { choice: "us_no_sponsorship", confidence: 0.8 } }), now).skipReason).toMatch(/no sponsorship/);
-    expect(scoreFromAnswers(job({ locations: ["SF"] }), answers({ work_auth: { choice: "us_citizenship_required", confidence: 0.8 } }), now).skipReason).toMatch(/citizenship/);
-    expect(scoreFromAnswers(job({ locations: ["SF"] }), answers({ work_auth: { choice: "us_no_sponsorship", confidence: 0.8 } }), now, { authorized: true, citizen: false }).skipReason).toBeNull();
-    expect(scoreFromAnswers(job({ locations: ["SF"] }), answers({ work_auth: { choice: "us_citizenship_required", confidence: 0.8 } }), now, { authorized: true, citizen: true }).skipReason).toBeNull();
+    // Ratings stored under the old US-only choices still read right.
+    expect(scoreFromAnswers(job({ locations: ["SF"] }), answers({ work_auth: { choice: "us_no_sponsorship", confidence: 0.8 } }), now, CANADIAN).skipReason).toMatch(/US role, no sponsorship/);
+    expect(scoreFromAnswers(job({ locations: ["SF"] }), answers({ work_auth: { choice: "us_citizenship_required", confidence: 0.8 } }), now, CANADIAN).skipReason).toMatch(/citizenship/);
+    expect(scoreFromAnswers(job({ locations: ["SF"] }), answers({ work_auth: { choice: "no_sponsorship", confidence: 0.8 } }), now, CANADIAN).skipReason).toMatch(/no sponsorship/);
+    const usResident: Where = { ...CANADIAN, authorized: ["Canada", "United States"] };
+    expect(scoreFromAnswers(job({ locations: ["SF"] }), answers({ work_auth: { choice: "us_no_sponsorship", confidence: 0.8 } }), now, usResident).skipReason).toBeNull();
+    expect(scoreFromAnswers(job({ locations: ["SF"] }), answers({ work_auth: { choice: "us_citizenship_required", confidence: 0.8 } }), now, { ...usResident, citizenOf: ["Canada", "USA"] }).skipReason).toBeNull();
     expect(scoreFromAnswers(job(), answers({ requires_references: { noul: 0.95 } }), now).skipReason).toMatch(/references/);
   });
   it("only trusts the account signal when the ATS is unknown", () => {

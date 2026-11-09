@@ -10,8 +10,8 @@ An open-source job application tool built on [Claude Code](https://claude.com/cl
 
 | | |
 |---|---|
-| **Who it is for** | Students and new graduates applying to software roles in Canada, the United States or remotely, who are comfortable opening a terminal once. It writes in English. |
-| **What you need** | A Mac with Google Chrome, [Node.js](https://nodejs.org) 22, and [Claude Code](https://claude.com/claude-code) with a Claude Pro or Max subscription. |
+| **Who it is for** | Students and new graduates applying to software roles in Canada, the United States, Saudi Arabia or remotely, who are comfortable opening a terminal once. It writes in English. |
+| **What you need** | A Mac or a Windows PC with Google Chrome, [Node.js](https://nodejs.org) 22, and [Claude Code](https://claude.com/claude-code) with a Claude Pro or Max subscription. |
 | **What it costs** | Your Claude subscription, plus a few dollars of [OpenRouter](https://openrouter.ai/keys) credit for JEV: about 1 to 1.5 cents per 10 applications. Nothing else. |
 | **How to start** | Clone it, run `npm install`, open `claude` in the folder and type `/setup`. About 20 minutes, most of it your answers. It ends with one application filled and waiting for your yes. |
 | **What it checks** | Your right to work, education and dates are taken from your profile and never changed to fit a form. Every answer is read back from the page before a form is sent. A human check is left to you. It can only be as truthful as the profile you give it. |
@@ -48,7 +48,7 @@ Four checks are built into the code. Your right to work, your education and your
 
 ## Prerequisites
 
-- A Mac with Google Chrome. The tool opens its own Chrome window with its own profile; your everyday browser is not touched.
+- A Mac or a Windows PC with Google Chrome. The tool opens its own Chrome window with its own profile; your everyday browser is not touched. If Chrome is somewhere unusual, set `CHROME_PATH`. On Windows three things are Mac-only for now: `/daily schedule` (run `npx jev daily` from Task Scheduler instead), the password window of `/accounts password` (put the password in `.env`), and desktop notifications.
 - [Node.js](https://nodejs.org) 22 or newer.
 - [Claude Code](https://claude.com/claude-code), signed in. Claude Code has no free tier: you need a Claude Pro or Max subscription, or a Claude API key in `.env` (then the commands work and the skills do not; see [Claude Code or the Claude API](#claude-code-or-the-claude-api)).
 - An [OpenRouter](https://openrouter.ai/keys) account with a few dollars of credit. That pays for JEV, the only separate bill: about 1 to 1.5 cents for every 10 applications, and 7 to 9 cents per search. Five dollars covers about 60 searches and 3,000 applications. See [What it costs](#what-it-costs).
@@ -276,7 +276,16 @@ A robot check, a phone code, a passkey and single sign-on stop the job with the 
 
 ### Which jobs it keeps
 
-The filters and the scoring are in `src/config.ts`: early-career titles only, the countries you may work in, how much a Vancouver, Canadian, remote or US posting is worth to you, and how old a posting may be (`/discover --max-age 30`). A posting that prefers another graduation date is ranked lower, not dropped: whether to apply is your decision.
+The filters and the scoring are in `src/config.ts`: early-career titles only, the countries you may work in, how much a posting in your own cities, the rest of your country, remote, another country you may work in, or anywhere else is worth to you (`LOCATION_MULTIPLIER`, read against your profile's address and preferred locations), and how old a posting may be (`/discover --max-age 30`). A posting that prefers another graduation date is ranked lower, not dropped: whether to apply is your decision.
+
+### Applying from Saudi Arabia
+
+Set your address to Saudi Arabia and list the cities you want (Riyadh, Jeddah, Dammam) first in your preferred locations. `/setup` asks whether you are a Saudi national, and if not, whether you hold an Iqama and whether it can be transferred. From there:
+
+- **Where the jobs come from.** The company boards of employers hiring software engineers in the Kingdom: Tamara, Careem (Greenhouse), Lean (Ashby), Rewaa (Lever), Salla, Foodics, Mozn, Lucidya, Nana (Workable), Tabby (Pinpoint) and Unifonic (Recruitee). The US and Canadian lists are skipped. A Greenhouse, Lever or Ashby link you add, or put in `data/imports/`, puts that company's whole board on the list; so does a Workable link that names the company (`apply.workable.com/<company>/j/...`).
+- **Co-op, Tamheer and programs.** Titles with co-op, trainee, Tamheer, "Program" or Arabic words for trainee and training are read as early career.
+- **Saudi nationals only.** A posting for Saudi nationals only, including Tamheer, is skipped unless your profile lists Saudi Arabia as a citizenship. "Are you a Saudi national?" on a form is answered from your citizenships and checked in code before the form is sent.
+- **What stays out of reach.** Aramco, STC, the banks and the government employers use systems that need an account (SuccessFactors, Oracle, Jadarat), so their postings are skipped. Pinpoint and Recruitee forms have not been filled by the tool yet: expect those to wait for you the first few times. A form that asks for your national ID or Iqama number always waits for you; the tool never stores it.
 
 ### Custom resume and cover letter templates
 

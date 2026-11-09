@@ -4,7 +4,6 @@
  * discover.ts, run/pipeline.ts and browser/. Commands that list things take
  * --json so their output can be read by a program.
  */
-import { spawn } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { Command } from "commander";
@@ -18,7 +17,8 @@ import { acquireRun, currentRun } from "./util/store.js";
 import { waitingWords } from "./run/assist.js";
 import { withStore } from "./util/store.js";
 import { checkJob } from "./browser/submit.js";
-import { ACCOUNTS, childEnv, DAILY, GMAIL, INBOX, loadEnv, DISCOVER, PATHS, REPORT, RUN } from "./config.js";
+import { openExternal } from "./util/platform.js";
+import { ACCOUNTS, DAILY, GMAIL, INBOX, loadEnv, DISCOVER, PATHS, REPORT, RUN } from "./config.js";
 import { accountGate } from "./accounts/capability.js";
 import { clearStop, dailyRun, formatDaily, localDay, requestStop, saveDaily, stopRequested, type Outcome } from "./run/daily.js";
 import { loadPolicy } from "./run/policy.js";
@@ -293,7 +293,7 @@ program
         if (d.cover) console.log(`   cover letter: ${d.cover}`);
         if (d.tailored.keywordsCovered.length) console.log(`   covers: ${d.tailored.keywordsCovered.slice(0, 12).join(", ")}`);
         if (d.tailored.keywordsMissing.length) console.log(`   the posting also wants, and your profile does not say: ${d.tailored.keywordsMissing.slice(0, 8).join(", ")}`);
-        if (o.open) for (const f of [d.resume, d.cover]) if (f) spawn("open", [f], { stdio: "ignore", detached: true, env: childEnv() }).unref();
+        if (o.open) for (const f of [d.resume, d.cover]) if (f) openExternal(f);
       } catch (err) {
         console.log(`== ${e.job.company} | ${e.job.title} [${e.job.id}]  not written: ${err instanceof Error ? err.message : String(err)}`);
       }
@@ -313,12 +313,12 @@ program
     if (o.static) {
       writeFileSync(o.static, reportPage(buildReport(loadRows())));
       console.log(`Wrote ${o.static}`);
-      if (o.open) spawn("open", [o.static], { stdio: "ignore", detached: true, env: childEnv() }).unref();
+      if (o.open) openExternal(o.static);
       return;
     }
     const address = await startReportServer(o.port);
     console.log(`Dashboard at ${address}  (Ctrl-C to stop)`);
-    if (o.open) spawn("open", [address], { stdio: "ignore", detached: true, env: childEnv() }).unref();
+    if (o.open) openExternal(address);
   });
 
 program
@@ -708,7 +708,7 @@ program
     const file = o.all ? PATHS.applications : o.manual ? PATHS.manual : PATHS.applied;
     if (o.open) {
       if (!existsSync(file)) return console.log(`Nothing to open yet. ${file} is created by the first discover run.`);
-      if (process.platform === "darwin") spawn("open", [file], { stdio: "ignore", detached: true, env: childEnv() }).unref();
+      openExternal(file);
       return console.log(file);
     }
     if (o.manual) {

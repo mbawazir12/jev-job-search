@@ -8,6 +8,7 @@ import { spawn } from "node:child_process";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { z } from "zod";
 import { childEnv, DOCUMENTS, PATHS, WRITER, writerBackend } from "../config.js";
+import { resolveExecutable } from "../util/platform.js";
 import type { QueueEntry } from "../jobs/queue.js";
 import type { Profile } from "../profile/schema.js";
 import { BANK_DRAFTS, BANK_INTENTS } from "./bank.js";
@@ -222,7 +223,7 @@ function callWriter(prompt: string, system: string, meta: { purpose: WriterCall[
   return new Promise((resolve, reject) => {
     mkdirSync(WRITER.cwd, { recursive: true });
     const child = spawn(
-      WRITER.command,
+      resolveExecutable(WRITER.command),
       ["-p", "--model", WRITER.model, "--effort", effortFor(meta.purpose), "--output-format", "json", "--tools", "", "--no-session-persistence", "--strict-mcp-config", "--system-prompt", system],
       { stdio: ["pipe", "pipe", "pipe"], cwd: WRITER.cwd, env: childEnv(WRITER.env) },
     );

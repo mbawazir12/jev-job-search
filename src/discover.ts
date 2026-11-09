@@ -9,7 +9,7 @@ import { DISCOVER, PATHS, CACHE } from "./config.js";
 import { JevClient } from "./jev/client.js";
 import { describe } from "./jobs/describe.js";
 import { capabilityFor } from "./accounts/capability.js";
-import { preFilter } from "./jobs/hardFilters.js";
+import { canonicalCountry, preFilter } from "./jobs/hardFilters.js";
 import { isWalled, learnedWalledHosts } from "./jobs/walled.js";
 import { dedupe, type Job } from "./jobs/normalize.js";
 import { entryFor, KEPT_ON_REDISCOVERY, loadQueue, mutateQueue, sortEntries, type QueueEntry, type QueueFile, type QueueStatus } from "./jobs/queue.js";
@@ -27,13 +27,16 @@ import { KeyedCache } from "./util/cache.js";
 import { fetchAshbyBoard } from "./sources/ats/ashby.js";
 import { fetchGreenhouseBoard } from "./sources/ats/greenhouse.js";
 import { fetchLeverBoard } from "./sources/ats/lever.js";
+import { fetchWorkableBoard } from "./sources/ats/workable.js";
+import { fetchPinpointBoard } from "./sources/ats/pinpoint.js";
+import { fetchRecruiteeBoard } from "./sources/ats/recruitee.js";
 import { boardsFromJobs, type Board } from "./sources/companies.js";
 import { fetchReadmeSources } from "./sources/githubReadme.js";
 import { fetchSimplify } from "./sources/simplify.js";
 import { importSheet } from "./sources/sheetImport.js";
 import { mapLimit } from "./util/http.js";
 
-export const EARLY_CAREER_TITLE = /\b(intern|internship|co-?op|new grad|new graduate|early career|early-career|entry[- ]level|junior|graduate|university|student|campus|associate software|software engineer i\b|engineer i\b|swe i\b)\b/i;
+export const EARLY_CAREER_TITLE = /\b(intern|internship|co-?op|coop|new grad|new graduate|fresh grad|fresh graduate|early career|early-career|early talent|entry[- ]level|junior|graduate|university|student|campus|trainee|tamheer|associate software|software engineer i\b|engineer i\b|swe i\b|(?:graduate|development|builders?|talent|rotational|leadership|summer|training) program(?:me)?)\b|\u0645\u062a\u062f\u0631\u0628|\u062a\u062f\u0631\u064a\u0628|\u062d\u062f\u064a\u062b \u0627\u0644\u062a\u062e\u0631\u062c|\u062a\u0645\u0647\u064a\u0631/i;
 
 /** A board posting counts as early-career by its title, or by naming the candidate's graduation year. */
 export function isEarlyCareerTitle(title: string, gradYear?: number): boolean {
@@ -42,6 +45,8 @@ export function isEarlyCareerTitle(title: string, gradYear?: number): boolean {
 
 export type DiscoverOptions = {
   boards?: boolean;
+  /** Read the GitHub lists of US and Canadian postings. On by default. */
+  lists?: boolean;
   limit?: number;
   log?: (line: string) => void;
   now?: Date;
@@ -69,15 +74,19 @@ export async function collectJobs(opts: DiscoverOptions = {}): Promise<Job[]> {
   const log = opts.log ?? (() => {});
   const jobs: Job[] = [];
 
-  const [simplify, readmes] = await Promise.all([
-    fetchSimplify().catch((e) => {
-      log(`[sources] simplify failed: ${String(e)}`);
-      return [] as Job[];
-    }),
-    fetchReadmeSources(),
-  ]);
-  log(`[sources] simplify ${simplify.length}, github lists ${readmes.length}`);
-  jobs.push(...simplify, ...readmes);
+  if (opts.lists !== false) {
+    const [simplify, readmes] = await Promise.all([
+      fetchSimplify().catch((e) => {
+        log(`[sources] simplify failed: ${String(e)}`);
+        return [] as Job[];
+      }),
+      fetchReadmeSources(),
+    ]);
+    log(`[sources] simplify ${simplify.length}, github lists ${readmes.length}`);
+    jobs.push(...simplify, ...readmes);
+  } else {
+    log("[sources] the US and Canadian lists are skipped for where you live (DISCOVER.northAmericanLists)");
+  }
 
   if (existsSync(PATHS.imports)) {
     for (const f of readdirSync(PATHS.imports).filter((f) => f.endsWith(".csv"))) {
@@ -97,6 +106,9 @@ export async function collectJobs(opts: DiscoverOptions = {}): Promise<Job[]> {
     const results = await mapLimit(boards, DISCOVER.fetchConcurrency, (b: Board) =>
       b.ats === "greenhouse" ? fetchGreenhouseBoard(b.slug, b.company)
       : b.ats === "lever" ? fetchLeverBoard(b.slug, b.company)
+      : b.ats === "workable" ? fetchWorkableBoard(b.slug, b.company)
+      : b.ats === "pinpoint" ? fetchPinpointBoard(b.slug, b.company)
+      : b.ats === "recruitee" ? fetchRecruiteeBoard(b.slug, b.company)
       : fetchAshbyBoard(b.slug, b.company),
     );
     let fromBoards = 0;
@@ -109,6 +121,13 @@ export async function collectJobs(opts: DiscoverOptions = {}): Promise<Job[]> {
     log(`[sources] boards contributed ${fromBoards} early-career postings`);
   }
   return dedupe(jobs);
+}
+
+/** Whether a search reads the US and Canadian lists: always, never, or ("auto") when the candidate lives in one of those two countries. */
+export function readsNorthAmericanLists(profile: Pick<Profile, "address">, setting: "auto" | "always" | "never" = DISCOVER.northAmericanLists): boolean {
+  if (setting !== "auto") return setting === "always";
+  const home = canonicalCountry(profile.address.country);
+  return home === "Canada" || home === "United States" || home === "";
 }
 
 /** What a search decided about one posting. */
@@ -173,7 +192,7 @@ export async function discover(profile: Profile, jev: JevClient, opts: DiscoverO
   const prevById = new Map(previous.entries.map((e) => [e.job.id, e]));
 
   const gradYear = profile.education[0]?.gradYear;
-  const all = await collectJobs({ ...opts, ...(gradYear !== undefined ? { gradYear } : {}) });
+  const all = await collectJobs({ lists: readsNorthAmericanLists(profile), ...opts, ...(gradYear !== undefined ? { gradYear } : {}) });
   const learned = learnedWalledHosts();
   const us = usStatus(profile);
   const collected = all.length;

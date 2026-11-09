@@ -28,7 +28,7 @@ export function agentPlist(o: { node: string; root: string; hour: number; minute
 <dict>
   <key>Label</key>${str(DAILY.label)}
   <key>ProgramArguments</key>
-  <array>${str(o.node)}${str(path.join(o.root, "bin", "jev.js"))}${str("daily")}</array>
+  <array>${str(o.node)}${str(path.posix.join(o.root, "bin", "jev.js"))}${str("daily")}</array>
   <key>WorkingDirectory</key>${str(o.root)}
   <key>StartCalendarInterval</key>
   <dict><key>Hour</key><integer>${o.hour}</integer><key>Minute</key><integer>${o.minute}</integer></dict>

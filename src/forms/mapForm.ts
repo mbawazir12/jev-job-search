@@ -17,7 +17,7 @@ import type { Answer, ChoiceAnswer, NoulAnswer, Questions } from "../jev/types.j
 import { ALL_KEYS, isProfileKey, isSpecialKey, profileFacts, valueFor, type FieldKey } from "../profile/fieldKeys.js";
 import { monthName, type Profile } from "../profile/schema.js";
 import { BANK_INTENTS } from "../answers/bank.js";
-import { countryOfLocations, locationTier } from "../jobs/hardFilters.js";
+import { countryNamedIn, countryOfLocations, sameCountry } from "../jobs/hardFilters.js";
 import type { Job } from "../jobs/normalize.js";
 import type { DumpedField, FieldsDump, FillPlan, PlannedField } from "./fields.js";
 import { documentPolicy, documentsFor, tailorJob } from "../documents/tailor.js";
@@ -26,8 +26,8 @@ import { loadQueue } from "../jobs/queue.js";
 const NONE = "__none__";
 
 export function buildFormState(profile: Profile, job: Job, dump: FieldsDump, fields: DumpedField[]): Record<string, unknown> {
-  const tier = locationTier(job.locations);
-  const country = tier === "vancouver" || tier === "canada" ? "Canada" : tier === "us" ? "United States" : tier === "remote" ? "remote (treat as the company's country)" : "unknown";
+  const named = countryOfLocations(job.locations);
+  const country = named ?? (job.locations.some((l) => /remote/i.test(l)) ? "remote (treat as the company's country)" : "unknown");
   return {
     page: { url: dump.url, title: dump.title, context: dump.context },
     job: { company: job.company, title: job.title, locations: job.locations, country },
@@ -38,7 +38,8 @@ export function buildFormState(profile: Profile, job: Job, dump: FieldsDump, fie
         authorized_without_sponsorship_in: profile.workAuthorization.authorizedCountries,
         needs_sponsorship_elsewhere: profile.workAuthorization.requiresSponsorshipElsewhere,
         statement: profile.workAuthorization.statement,
-        for_this_job: authForCountry(profile, country),
+        for_this_job: { ...authForCountry(profile, country), citizen_or_national_of_job_country: named ? citizenOf(profile, named) : "unknown" },
+        ...(profile.workAuthorization.iqama ? { iqama: profile.workAuthorization.iqama } : {}),
       },
       education: {
         ...profile.education[0],
@@ -58,9 +59,10 @@ export function buildFormState(profile: Profile, job: Job, dump: FieldsDump, fie
       preferences: profile.preferences,
       /** The candidate's own answers to recurring questions. They outrank any guess. */
       standing_answers: profile.answers,
-      gpa_policy: "Only give a GPA if the field is required. The cumulative GPA is " + (profile.education[0]?.gpa?.cumulative ?? "not provided") + " on a 4.0 scale.",
+      gpa_policy: "Only give a GPA if the field is required. The cumulative GPA is " + (profile.education[0]?.gpa?.cumulative ?? "not provided") + ` on a ${(profile.education[0]?.gpa?.scale ?? 4).toFixed(1)} scale.`,
       rules: [
         `The candidate may work without sponsorship only in: ${profile.workAuthorization.authorizedCountries.join(", ")}. Never claim work authorization anywhere else.`,
+        `The candidate is a citizen or national only of: ${profile.workAuthorization.citizenships.join(", ")}. A question such as "Are you a Saudi national?" is answered from that list and nothing else.`,
         "Never write a cover letter.",
         "Salary expectation is left blank or set to negotiable.",
         "Marketing opt-ins are optional and left unchecked. Consent and acknowledgement boxes required to apply are checked.",
@@ -115,7 +117,12 @@ const BOTH_NAMES = /\bfirst\b[^.]{0,12}\blast\b|\bfull name\b/i;
 const PREFERRED_NAME_BOX = /\b(i have|i use|i go by)\b[^.]{0,30}\b(preferred|different|another) name\b/i;
 const ROUTINE_AGREEMENT = /\b(privacy|true|accurate|correct|complete|information (?:i|provided|above)|data (?:protection|processing))/i;
 
-export type Category = "contact_other" | "authorization" | "sponsorship" | "agreement" | "general";
+/** "Are you a Saudi national?", "Are you a US citizen?", "Saudi nationals only, do you qualify?" */
+const NATIONAL_Q = /\b(?:citizen|citizenship|national|nationality)\b|\u0645\u0648\u0627\u0637\u0646|\u0633\u0639\u0648\u062f\u064a \u0627\u0644\u062c\u0646\u0633\u064a\u0629/i;
+/** A question that asks for more than citizenship ("citizen or permanent resident") cannot be checked against the citizenships alone. */
+const NOT_ONLY_CITIZEN = /permanent resident|green card|residen|iqama|visa|refugee|asylum|work permit/i;
+
+export type Category = "contact_other" | "authorization" | "sponsorship" | "nationality" | "agreement" | "general";
 
 /** What kind of answer a field asks for, from its question. The kinds that must be true get stricter rules. */
 export function categoryOf(f: Pick<DumpedField, "label" | "section" | "hint" | "kind">): Category {
@@ -127,18 +134,14 @@ export function categoryOf(f: Pick<DumpedField, "label" | "section" | "hint" | "
   // "Authorized to work without sponsorship" is a question about authorization; "will you require sponsorship" is about sponsorship.
   if (auth && !NEEDS_PERMIT_Q.test(words) && (!sponsor || /without (?:the need for |requiring |needing )?(?:visa )?sponsor/i.test(words))) return "authorization";
   if (sponsor && (!auth || NEEDS_PERMIT_Q.test(words))) return "sponsorship";
+  if (NATIONAL_Q.test(f.label) && !NOT_ONLY_CITIZEN.test(f.label)) return "nationality";
   return "general";
 }
 
 /** The country a question about the right to work means: the one it names, else the posting's. Null when neither says. */
 export function countryOf(label: string, job: Job): string | null {
-  if (/\bcanad/i.test(label)) return "Canada";
-  if (/united states|\bu\.?s\.?a?\.?\b|\bamerica\b/i.test(label)) return "United States";
-  const tier = locationTier(job.locations);
-  if (tier === "vancouver" || tier === "canada") return "Canada";
-  if (tier === "us") return "United States";
   // A posting that lists a city and "Remote" is read as remote; the city still says which country.
-  return countryOfLocations(job.locations);
+  return countryNamedIn(label) ?? countryOfLocations(job.locations);
 }
 
 /** Yes or No, when an option plainly says one of them. */
@@ -148,6 +151,7 @@ export const polarity = (label: string): "Yes" | "No" | null => (/^\s*yes\b/i.te
 export function truthFor(category: Category, label: string, profile: Profile, job: Job): "Yes" | "No" | null {
   const country = countryOf(label, job);
   if (!country) return null;
+  if (category === "nationality") return citizenOf(profile, country);
   const auth = authForCountry(profile, country);
   return category === "authorization" ? auth.authorized : category === "sponsorship" ? auth.requires_sponsorship : null;
 }
@@ -161,7 +165,9 @@ export const approvesAgreements = (profile: Profile): boolean => profile.answers
  */
 export function gateAnswer(f: Pick<DumpedField, "label" | "section" | "hint" | "kind">, value: string, profile: Profile, job: Job): string | null {
   const category = categoryOf(f);
-  if (category !== "authorization" && category !== "sponsorship") return null;
+  if (category !== "authorization" && category !== "sponsorship" && category !== "nationality") return null;
+  // A nationality box that takes a country ("Nationality: Saudi Arabia") is filled from the citizenships; only a yes or no is checked here.
+  if (category === "nationality" && polarity(value) === null) return null;
   const truth = truthFor(category, f.label, profile, job);
   if (truth === null) return "the question does not name a country and the posting's is not clear, so the answer is yours";
   const said = polarity(value);
@@ -170,8 +176,13 @@ export function gateAnswer(f: Pick<DumpedField, "label" | "section" | "hint" | "
 }
 
 export function authForCountry(profile: Profile, country: string): { authorized: "Yes" | "No"; requires_sponsorship: "Yes" | "No" } {
-  const ok = profile.workAuthorization.authorizedCountries.some((c) => country.toLowerCase().includes(c.toLowerCase()));
+  const ok = profile.workAuthorization.authorizedCountries.some((c) => sameCountry(c, country));
   return { authorized: ok ? "Yes" : "No", requires_sponsorship: ok ? "No" : "Yes" };
+}
+
+/** Yes when the profile lists the country among the candidate's citizenships. */
+export function citizenOf(profile: Profile, country: string): "Yes" | "No" {
+  return profile.workAuthorization.citizenships.some((c) => sameCountry(c, country)) ? "Yes" : "No";
 }
 
 const TEXT_KINDS = new Set(["text", "email", "tel", "url", "number", "date", "calendar", "textarea"]);
@@ -591,10 +602,11 @@ function gpaValue(profile: Profile): string | null {
 /** Profile value for a key, with the two job-dependent keys resolved against the posting's country. */
 export function valueForJob(profile: Profile, job: Job, key: FieldKey, label = ""): string | null {
   if (isSpecialKey(key)) return null;
-  if (key === "authorized_to_work" || key === "requires_sponsorship") {
+  if (key === "authorized_to_work" || key === "requires_sponsorship" || key === "citizen_of_job_country") {
     // The country is the one the question names, else the posting's. When neither says, the answer is the person's.
     const country = countryOf(label, job);
     if (!country) return null;
+    if (key === "citizen_of_job_country") return citizenOf(profile, country);
     const auth = authForCountry(profile, country);
     return key === "authorized_to_work" ? auth.authorized : auth.requires_sponsorship;
   }

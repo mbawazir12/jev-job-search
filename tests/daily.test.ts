@@ -85,10 +85,13 @@ describe("the standing policy", () => {
   });
 
   it("keeps out what the person excluded, in code", () => {
-    const p = policy({ where: ["canada"], levels: ["internship"], minScore: 0.5, boards: ["greenhouse", "lever"], excludeEmployers: ["acme"] });
+    const p = policy({ where: ["home"], levels: ["internship"], minScore: 0.5, boards: ["greenhouse", "lever"], excludeEmployers: ["acme"] });
     expect(policyRefuses(job(), p)).toBeNull();
     expect(policyRefuses(job({ company: "ACME Robotics Inc." }), p)).toMatch(/excluded acme/);
-    expect(policyRefuses(job({ tier: "us" }), p)).toMatch(/not in canada/);
+    expect(policyRefuses(job({ tier: "us" }), p)).toMatch(/not in home/);
+    // A policy or a rating written with the older names reads the same.
+    expect(Policy.parse({ where: ["vancouver", "canada"] }).where).toEqual(["local", "home"]);
+    expect(policyRefuses(job({ tier: "abroad" }), p)).toMatch(/not in home/);
     expect(policyRefuses(job({ level: "new_grad" }), p)).toMatch(/not internship/);
     expect(policyRefuses(job({ score: 0.4 }), p)).toMatch(/under 0.5/);
     expect(policyRefuses(job({ ats: "workday" }), p)).toMatch(/not one of your boards/);

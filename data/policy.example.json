@@ -1,7 +1,7 @@
 {
   "version": 1,
   "target": 15,
-  "where": ["vancouver", "canada", "remote"],
+  "where": ["local", "home", "remote"],
   "levels": ["internship"],
   "minScore": 0.5,
   "boards": [],

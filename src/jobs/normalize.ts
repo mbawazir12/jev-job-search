@@ -7,7 +7,7 @@ import { createHash } from "node:crypto";
 
 export type Ats =
   | "greenhouse" | "lever" | "ashby" | "workday" | "icims" | "smartrecruiters" | "jobvite"
-  | "rippling" | "bamboohr" | "taleo" | "oracle" | "successfactors" | "linkedin" | "amazon" | "other";
+  | "rippling" | "bamboohr" | "workable" | "pinpoint" | "recruitee" | "taleo" | "oracle" | "successfactors" | "linkedin" | "amazon" | "other";
 
 export type Sponsorship = "offers" | "none" | "citizenship" | "unknown";
 
@@ -98,6 +98,9 @@ export function atsFromUrl(url: string): Ats {
   if (on("jobvite.com")) return "jobvite";
   if (on("rippling.com")) return "rippling";
   if (on("bamboohr.com")) return "bamboohr";
+  if (on("workable.com")) return "workable";
+  if (on("pinpointhq.com")) return "pinpoint";
+  if (on("recruitee.com")) return "recruitee";
   if (on("taleo.net")) return "taleo";
   if (on("oraclecloud.com")) return "oracle";
   if (on("successfactors.com", "jobs.sap.com") || /[?&]ats=successfactors\b/.test(u)) return "successfactors";
@@ -199,6 +202,11 @@ export function applyUrlFor(job: Pick<Job, "url" | "ats">): string {
   if (job.ats === "ashby") {
     const m = /^(https:\/\/jobs\.ashbyhq\.com\/[^/]+\/[0-9a-f-]{36})/i.exec(job.url);
     return m ? `${m[1]}/application` : job.url;
+  }
+  if (job.ats === "workable") {
+    // apply.workable.com/j/<code> and apply.workable.com/<account>/j/<code> both have the form at /apply.
+    const m = /^(https:\/\/apply\.workable\.com\/(?:[^/]+\/)?j\/[0-9A-F]+)/i.exec(job.url);
+    return m ? `${m[1]}/apply` : job.url;
   }
   // Workday: straight to the application, past the choice between "autofill" and "apply manually".
   if (job.ats === "workday" && workday.tenantOf(job.url)) return workday.applicationUrl(job.url);

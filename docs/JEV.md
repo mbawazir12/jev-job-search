@@ -128,12 +128,12 @@ State: `{ job: { company, title, locations, posted_days_ago, terms_from_source, 
 | `level` | choice: internship, new_grad, experienced, other | `experienced` with confidence ≥ 0.6 is a skip. |
 | `is_unpaid` | noul | Skip above 0.7. |
 | `needs_advanced_degree` | noul | "Require", not "prefer". Skip above 0.7. |
-| `work_auth` | choice: canada_ok, us_sponsors, us_no_sponsorship, us_citizenship_required, remote_global, unclear | The two US negatives are skips. Everything else is applied to truthfully. |
+| `work_auth` | choice: open, sponsors, no_sponsorship, nationals_only, remote_global, unclear | Read against the role's country. `no_sponsorship` is a skip where the profile may not work; `nationals_only` ("Saudi nationals only", Tamheer, US citizenship or clearance) is a skip unless the profile lists that citizenship. Ratings stored under the old US-only names are read as these. |
 | `term` | choice: summer_2027, new_grad_2027, winter_2027, fall_2026, other | Feeds the term component of the score. |
 | `returning_student_required` | noul | Not a skip; recorded in the notes because the candidate may extend a term. |
 | `stack_match` | score 0..4 | Score component. |
 | `experience_match` | score 0..4 | Score component. |
-| `location_tier` | choice: vancouver, canada, remote, us, international, unclear | Used only when code cannot classify the location strings. |
+| `location_tier` | choice: local, home, remote, authorized, abroad, unclear, worded from the profile's cities and countries | Used only when code cannot classify the location strings. |
 | `interview_practical` | noul | Small bonus; the user prefers practical loops. |
 | `callback_likelihood` | score 0..4 | The heaviest component: the composite judgement a recruiter would make. |
 | `needs_account` | noul | Trusted only when the ATS is unknown to code and the value is above 0.9. |

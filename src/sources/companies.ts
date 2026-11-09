@@ -1,16 +1,21 @@
 /**
  * Company boards worth polling directly. Seeded from every Greenhouse,
- * Lever and Ashby URL the list sources mention (those companies are hiring
- * early-career now), plus a hand-kept list of boards that post Canadian and
- * remote early-career software roles. Polling the board catches postings the
- * lists have not picked up yet, which is where the freshest ones are.
+ * Lever, Ashby, Workable, Pinpoint and Recruitee URL the list sources mention
+ * (those companies are hiring early-career now), plus a hand-kept list of
+ * boards that post Canadian, Saudi and remote early-career software roles.
+ * Polling the board catches postings the lists have not picked up yet, which
+ * is where the freshest ones are. A link you add yourself, or a row in
+ * data/imports/*.csv, also puts its company's board on the list.
  */
 import { greenhouseSlug } from "./ats/greenhouse.js";
 import { leverSlug } from "./ats/lever.js";
 import { ashbySlug } from "./ats/ashby.js";
+import { workableSlug } from "./ats/workable.js";
+import { pinpointSlug } from "./ats/pinpoint.js";
+import { recruiteeSlug } from "./ats/recruitee.js";
 import type { Job } from "../jobs/normalize.js";
 
-export type Board = { ats: "greenhouse" | "lever" | "ashby"; slug: string; company: string };
+export type Board = { ats: "greenhouse" | "lever" | "ashby" | "workable" | "pinpoint" | "recruitee"; slug: string; company: string };
 
 /** Boards polled on every discover run regardless of what the lists mention. */
 export const SEED_BOARDS: Board[] = [
@@ -92,6 +97,19 @@ export const SEED_BOARDS: Board[] = [
   { ats: "ashby", slug: "neofinancial", company: "Neo Financial" },
   { ats: "ashby", slug: "jobber", company: "Jobber" },
   { ats: "ashby", slug: "lightspeedhq", company: "Lightspeed" },
+  // Companies hiring software engineers in Saudi Arabia. Checked against each board's public API on 2026-11-09.
+  // Aramco, STC, the banks and the government employers use account-walled systems (SuccessFactors, Oracle, Jadarat) and are left out.
+  { ats: "greenhouse", slug: "tamara", company: "Tamara" },
+  { ats: "greenhouse", slug: "careem", company: "Careem" },
+  { ats: "ashby", slug: "leantech", company: "Lean Technologies" },
+  { ats: "lever", slug: "rewaatech", company: "Rewaa" },
+  { ats: "workable", slug: "salla", company: "Salla" },
+  { ats: "workable", slug: "foodics", company: "Foodics" },
+  { ats: "workable", slug: "mozn-ai", company: "Mozn" },
+  { ats: "workable", slug: "lucidya", company: "Lucidya" },
+  { ats: "workable", slug: "nana-grocery-direct", company: "Nana" },
+  { ats: "pinpoint", slug: "tabby", company: "Tabby" },
+  { ats: "recruitee", slug: "unifonic", company: "Unifonic" },
 ];
 
 /** Every board the given jobs point at, merged with the seed list, deduped by ats+slug. */
@@ -109,6 +127,15 @@ export function boardsFromJobs(jobs: Job[], seeds: Board[] = SEED_BOARDS): Board
     } else if (j.ats === "ashby") {
       const s = ashbySlug(j.url);
       if (s) b = { ats: "ashby", slug: s, company: j.company };
+    } else if (j.ats === "workable") {
+      const s = workableSlug(j.url) ?? /^workable:(.+)$/.exec(j.source)?.[1] ?? null;
+      if (s) b = { ats: "workable", slug: s, company: j.company };
+    } else if (j.ats === "pinpoint") {
+      const s = pinpointSlug(j.url);
+      if (s) b = { ats: "pinpoint", slug: s, company: j.company };
+    } else if (j.ats === "recruitee") {
+      const s = recruiteeSlug(j.url);
+      if (s) b = { ats: "recruitee", slug: s, company: j.company };
     }
     if (b && !map.has(`${b.ats}:${b.slug.toLowerCase()}`)) map.set(`${b.ats}:${b.slug.toLowerCase()}`, b);
   }

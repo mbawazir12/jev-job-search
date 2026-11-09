@@ -8,7 +8,7 @@ posting found by three lists is rated once.
 
 | Source | Read how | Freshness | Notes |
 |---|---|---|---|
-| SimplifyJobs Summer2027-Internships | `listings.json` behind the README (`.github/scripts/listings.json`, dev branch). Fields: category, company, title, active, terms, date_posted, url, locations, sponsorship, degrees | Updated continuously; about 17,000 rows, 4,500 active, about 1,000 posted in the last two weeks | Only `Software` and `Software Engineering` categories. `sponsorship` and `degrees` flags feed the pre-filter. |
+| SimplifyJobs Summer2027-Internships (this row and the four list rows below are read only when you live in Canada or the United States, or `DISCOVER.northAmericanLists` says so) | `listings.json` behind the README (`.github/scripts/listings.json`, dev branch). Fields: category, company, title, active, terms, date_posted, url, locations, sponsorship, degrees | Updated continuously; about 17,000 rows, 4,500 active, about 1,000 posted in the last two weeks | Only `Software` and `Software Engineering` categories. `sponsorship` and `degrees` flags feed the pre-filter. |
 | SimplifyJobs New-Grad-Positions | Same format, no `terms` | About 19,600 rows | New-grad roles for a May 2027 start. |
 | negarprh/Canadian-Tech-Internships-2027 | README markdown table, badge links, `MMM DD, YYYY` dates, `↳` for repeated companies, 🔒 closed | 450+ rows, most Workday | Canada only. |
 | vanshb03/Summer2027-Internships | README table, `<a href>` links, `MMM DD` dates, 🛂 and 🇺🇸 flags | About 200 rows | US and Canada. |
@@ -16,6 +16,9 @@ posting found by three lists is rated once.
 | Greenhouse boards | `boards-api.greenhouse.io/v1/boards/{slug}/jobs?content=true` | Live | Polled for every company the lists mention plus the seed list in `src/sources/companies.ts`. Full description included. |
 | Lever boards | `api.lever.co/v0/postings/{slug}?mode=json` | Live | Same. |
 | Ashby boards | `api.ashbyhq.com/posting-api/job-board/{slug}` | Live | Same. Includes `descriptionPlain`. |
+| Workable accounts | `apply.workable.com/api/v1/widget/accounts/{slug}?details=true` | Live | A job listed once per city is merged into one job. Salla, Foodics, Mozn, Lucidya and Nana in the seed list. |
+| Pinpoint boards | `{slug}.pinpointhq.com/postings.json` | Live | No posting date, so the age filter cannot drop an old one. Tabby in the seed list. Its forms have not been filled yet. |
+| Recruitee boards | `{slug}.recruitee.com/api/offers/` | Live | Offers may live on the company's own domain; the job keeps `ats: recruitee`. Unifonic in the seed list. Its forms have not been filled yet. |
 | Your tracking sheet | CSV files in `data/imports/` with at least Company and Job Link columns | When you export it | Rows already marked applied are ignored. |
 
 Board polling matters because the lists lag by a day or two and the user

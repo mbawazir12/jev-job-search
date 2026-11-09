@@ -5,15 +5,22 @@
  */
 import { existsSync, readFileSync } from "node:fs";
 import { z } from "zod";
-import { DAILY, DISCOVER, PATHS } from "../config.js";
+import { DAILY, DISCOVER, LEGACY_TIERS, LOCATION_MULTIPLIER, PATHS } from "../config.js";
+import { normalizeTier, type LocationTier } from "../jobs/hardFilters.js";
 import type { QueueEntry } from "../jobs/queue.js";
+
+const TIERS = [...Object.keys(LOCATION_MULTIPLIER), ...Object.keys(LEGACY_TIERS)] as [string, ...string[]];
 
 export const Policy = z.object({
   version: z.literal(1).default(1),
   /** Applications a day. */
   target: z.number().int().min(1).max(DAILY.maxTarget).default(DAILY.target),
-  /** Where a job may be: vancouver, canada, remote, us, international, unclear. Empty means anywhere the search kept. */
-  where: z.array(z.enum(["vancouver", "canada", "remote", "us", "international", "unclear"])).default([]),
+  /**
+   * Where a job may be, relative to your profile: local (your cities), home (the rest of your country), remote,
+   * authorized (other countries you may work in), abroad, unclear. Empty means anywhere the search kept. The
+   * names earlier versions used (vancouver, canada, us, international) are read as local, home, abroad, abroad.
+   */
+  where: z.array(z.enum(TIERS)).default([]).transform((w) => [...new Set(w.map((t) => normalizeTier(t)))] as LocationTier[]),
   /** Which kinds of job: internship, new_grad. Empty means both. */
   levels: z.array(z.enum(["internship", "new_grad"])).default([]),
   /** The lowest fit score a job may have. */
@@ -44,8 +51,8 @@ export function policyRefuses(e: QueueEntry, p: Policy): string | null {
   if (excluded) return `you excluded ${excluded}`;
   if (p.boards.length && !p.boards.includes(e.job.ats)) return `${e.job.ats} is not one of your boards`;
   if ((e.fit?.score ?? 0) < p.minScore) return `its fit score is under ${p.minScore}`;
-  const tier = e.fit?.locationTier;
-  if (p.where.length && !(tier && (p.where as string[]).includes(tier))) return `it is not in ${p.where.join(", ")}`;
+  const tier = e.fit?.locationTier ? normalizeTier(e.fit.locationTier) : undefined;
+  if (p.where.length && !(tier && p.where.includes(tier))) return `it is not in ${p.where.join(", ")}`;
   const level = (e.fit?.answers.level as { choice?: string } | undefined)?.choice;
   if (p.levels.length && !(level && (p.levels as string[]).includes(level))) return `it is not ${p.levels.join(" or ")}`;
   return null;

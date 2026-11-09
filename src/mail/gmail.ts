@@ -6,13 +6,13 @@
  *
  * Tokens are Secrets from the moment they arrive. Nothing here prints a reply from Google.
  */
-import { spawn } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { z } from "zod";
-import { childEnv, GMAIL, PATHS } from "../config.js";
+import { GMAIL, PATHS } from "../config.js";
+import { openExternal } from "../util/platform.js";
 import type { SecretStore } from "../accounts/secrets.js";
 import { Secret } from "../util/redact.js";
 import { writeAtomic } from "../util/store.js";
@@ -49,7 +49,7 @@ async function token(fetcher: Fetch, body: Record<string, string>): Promise<z.in
 
 /** Opens a link in the person's own browser. */
 const openLink = (url: string) => {
-  if (process.platform === "darwin") spawn("/usr/bin/open", [url], { stdio: "ignore", detached: true, env: childEnv() }).unref();
+  openExternal(url);
 };
 
 /**

@@ -103,6 +103,17 @@ export const ProfileSchema = z.object({
     requiresSponsorshipElsewhere: z.boolean(),
     /** One sentence, used verbatim when a form asks to explain status. */
     statement: z.string(),
+    /**
+     * A Saudi residence permit, for a candidate who lives in Saudi Arabia and is not a Saudi national.
+     * Leave it out otherwise. The Iqama number itself is never stored: a form that asks for it waits for the person.
+     */
+    iqama: z
+      .object({
+        holder: z.boolean(),
+        /** Whether the Iqama can be transferred to a new employer. Leave it out when unsure. */
+        transferable: z.boolean().optional(),
+      })
+      .optional(),
   }),
   demographics: z.object({
     gender: z.string(),

@@ -51,6 +51,9 @@ export const PROFILE_KEYS = {
   authorized_to_work: "Yes or no: legally authorized to work in the posting's country",
   requires_sponsorship: "Yes or no: will require visa sponsorship now or in the future",
   work_authorization_statement: "Open explanation of work authorization or visa status",
+  citizen_of_job_country: "Yes or no: is the candidate a citizen or national of the posting's country (\"Are you a Saudi national?\")",
+  iqama_holder: "Yes or no: does the candidate hold a Saudi Iqama (residence permit)",
+  iqama_transferable: "Yes or no: can the candidate's Iqama be transferred to a new employer",
   pronouns: "Pronouns",
   date_of_birth: "Date of birth",
   gender: "Gender",
@@ -144,6 +147,12 @@ export function valueFor(profile: Profile, key: ProfileKey): string | null {
     case "authorized_to_work": return null; // decided per posting country by the select mapper
     case "requires_sponsorship": return null; // decided per posting country by the select mapper
     case "work_authorization_statement": return profile.workAuthorization.statement;
+    case "citizen_of_job_country": return null; // decided per posting country by the select mapper
+    case "iqama_holder": return profile.workAuthorization.iqama ? (profile.workAuthorization.iqama.holder ? "Yes" : "No") : null;
+    case "iqama_transferable": {
+      const iqama = profile.workAuthorization.iqama;
+      return iqama?.holder && iqama.transferable !== undefined ? (iqama.transferable ? "Yes" : "No") : null;
+    }
     case "pronouns": return profile.pronouns ?? null;
     case "date_of_birth": return profile.dateOfBirth ?? null;
     case "gender": return profile.demographics.gender;

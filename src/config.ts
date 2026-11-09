@@ -9,6 +9,25 @@ import { fileURLToPath } from "node:url";
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
+/**
+ * Where Google Chrome is on this machine. CHROME_PATH in the environment wins; otherwise the usual
+ * install places for macOS, Windows and Linux are tried in turn.
+ */
+function chromePath(): string {
+  if (process.env.CHROME_PATH) return process.env.CHROME_PATH;
+  const candidates =
+    process.platform === "win32"
+      ? [
+          path.join(process.env.ProgramFiles ?? "C:\\Program Files", "Google", "Chrome", "Application", "chrome.exe"),
+          path.join(process.env["ProgramFiles(x86)"] ?? "C:\\Program Files (x86)", "Google", "Chrome", "Application", "chrome.exe"),
+          path.join(process.env.LOCALAPPDATA ?? path.join(os.homedir(), "AppData", "Local"), "Google", "Chrome", "Application", "chrome.exe"),
+        ]
+      : process.platform === "linux"
+        ? ["/usr/bin/google-chrome", "/usr/bin/google-chrome-stable", "/usr/bin/chromium", "/usr/bin/chromium-browser"]
+        : ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"];
+  return candidates.find((p) => existsSync(p)) ?? (candidates[0] as string);
+}
+
 export const PATHS = {
   root: ROOT,
   data: path.join(ROOT, "data"),
@@ -133,6 +152,12 @@ export const DISCOVER = {
   accountWalledHosts: ["eightfold.ai", "careers.microsoft.com", "jobs.intuit.com", "jobs.ea.com"],
   /** Job boards whose forms the page scripts cannot read yet. Their jobs are skipped with that reason. */
   unreadableAts: ["smartrecruiters"],
+  /**
+   * Whether the GitHub lists below are read. They hold US and Canadian postings, so "auto" reads
+   * them only for a candidate who lives in one of those two countries. The company boards in
+   * src/sources/companies.ts are polled either way.
+   */
+  northAmericanLists: "auto" as "auto" | "always" | "never",
   /** Sources that are read from GitHub. Each entry names the raw file and its parser. */
   sources: {
     simplifyInternships:
@@ -161,14 +186,69 @@ export const FIT_WEIGHTS = {
   interviewPractical: 0.05,
 } as const;
 
+/**
+ * How much where a job is counts, relative to the candidate's own profile:
+ * local: a city in preferences.preferredLocations or the home city;
+ * home: elsewhere in the country the candidate lives in (address.country);
+ * remote: remote with no country restriction;
+ * authorized: another country the candidate may work in without sponsorship;
+ * abroad: any other country, where the candidate would need sponsorship.
+ */
 export const LOCATION_MULTIPLIER = {
-  vancouver: 1.0,
-  canada: 0.92,
+  local: 1.0,
+  home: 0.92,
   remote: 0.9,
-  us: 0.75,
-  international: 0.6,
+  authorized: 0.8,
+  abroad: 0.6,
   unclear: 0.7,
 } as const;
+
+/** Tier names written by earlier versions, read as the tier they meant for a candidate living in Canada. */
+export const LEGACY_TIERS: Record<string, keyof typeof LOCATION_MULTIPLIER> = {
+  vancouver: "local",
+  canada: "home",
+  us: "abroad",
+  international: "abroad",
+};
+
+/**
+ * The countries the code can name from a posting's locations or a form's question. `names` match a
+ * country's own name, its short forms and what its people are called, and are safe to read in a
+ * question ("Are you a Saudi national?"). `places` match cities and regions and are read in
+ * location strings only. `codes` are region abbreviations that only count in capitals ("Austin, TX").
+ * Order matters: the first country whose words match wins, so countries named by words that are
+ * never anything else come before the ones with two-letter codes.
+ */
+export const COUNTRIES: readonly { name: string; names: RegExp; places?: RegExp; codes?: RegExp }[] = [
+  {
+    name: "Saudi Arabia",
+    names: /\bsaudi\b|\bKSA\b|kingdom of saudi|المملكة العربية السعودية|السعودية|سعودي/i,
+    places: /riyadh|jeddah|jedda\b|dammam|khobar|dhahran|makkah|mecca|madinah|medina|\bneom\b|jubail|yanbu|tabuk|\babha\b|\btaif\b|qassim|buraydah|hail\b|najran|jazan|jizan|al[- ]?ula\b|al[- ]?ahsa|hofuf|qatif|khamis mushait|\bkaec\b|king abdullah economic city|thuwal|\bkaust\b|الرياض|جدة|الدمام|الخبر|الظهران|مكة|المدينة|نيوم/i,
+  },
+  { name: "United Arab Emirates", names: /\bUAE\b|united arab emirates|emirati|الإمارات/i, places: /dubai|abu dhabi|sharjah|ajman|ras al khaimah|دبي|أبوظبي/i },
+  { name: "Qatar", names: /\bqatar|\bqatari\b/i, places: /\bdoha\b/i },
+  { name: "Bahrain", names: /\bbahrain/i, places: /manama/i },
+  { name: "Kuwait", names: /\bkuwait/i },
+  { name: "Oman", names: /\boman\b|\bomani\b/i, places: /muscat/i },
+  { name: "Egypt", names: /\begypt/i, places: /cairo|alexandria|giza/i },
+  { name: "Jordan", names: /\bjordan(?:ian)?\b/i, places: /\bamman\b/i },
+  {
+    name: "Canada",
+    names: /\bcanad/i,
+    places: /Toronto|Vancouver|Montreal|Montréal|Calgary|Edmonton|Ottawa|Waterloo|Kitchener|Victoria|Winnipeg|Halifax|Québec|Quebec|Mississauga|Burnaby|Markham/i,
+    // Province codes count only in capitals: "Riyadh (On-site)" is not Ontario.
+    codes: /\b(CAN|AB|BC|MB|NB|NL|NS|NT|NU|ON|PE|QC|SK|YT)\b/,
+  },
+  {
+    name: "United States",
+    // "US" counts in capitals only: "work with us" is not a country.
+    names: /[Uu]nited [Ss]tates|\b[Aa]merica\b|\bU\.S\.A?\.?(?=\W|$)|\bUSA?\b/,
+    places: /\bSF\b|\bNYC\b|new york|san francisco|south san francisco|seattle|austin|boston|chicago|los angeles|bay area|palo alto|menlo park|mountain view|sunnyvale|san jose|redwood city|san mateo|santa clara|cupertino|oakland|berkeley|denver|atlanta|dallas|houston|miami|washington|arlington|bellevue|redmond|kirkland|portland|phoenix|philadelphia|pittsburgh|detroit|minneapolis|salt lake|las vegas|san diego|irvine|raleigh|durham|charlotte|nashville|columbus|cambridge, ma|jersey city|brooklyn|manhattan/i,
+    codes: /\b(AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY|DC)\b/,
+  },
+  // After Canada: "London, ON" is in Ontario.
+  { name: "United Kingdom", names: /united kingdom|\bU\.?K\.?\b|\bbritish\b|\bengland\b/i, places: /\blondon\b|manchester|edinburgh/i },
+];
 
 /** Applied when the posting asks for a graduation date the candidate does not have. They can still apply, so it ranks lower instead of being dropped. */
 export const GRADUATION_MISMATCH_MULTIPLIER = 0.6;
@@ -228,7 +308,7 @@ export const CACHE = {
 
 export const BROWSER = {
   /** The Chrome binary the fill runner drives over the DevTools protocol. */
-  chromePath: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+  chromePath: chromePath(),
   /** Local DevTools port of the runner's own Chrome window. */
   port: 9333,
   /** Its profile lives with the other run data, so it is git-ignored and keeps cookies between runs. */
@@ -443,7 +523,11 @@ export const ASSIST = {
 
 /** What a child process may inherit from the environment. Keys and passwords are not on the list, so no child ever sees one. */
 export const CHILD_ENV = {
-  allow: ["PATH", "HOME", "USER", "LOGNAME", "SHELL", "TMPDIR", "LANG", "LC_ALL", "LC_CTYPE", "TERM", "TZ", "CLAUDE_CONFIG_DIR", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY", "https_proxy", "http_proxy", "no_proxy", "SSL_CERT_FILE", "NODE_EXTRA_CA_CERTS", "__CF_USER_TEXT_ENCODING", "DISPLAY"],
+  allow: [
+    "PATH", "HOME", "USER", "LOGNAME", "SHELL", "TMPDIR", "LANG", "LC_ALL", "LC_CTYPE", "TERM", "TZ", "CLAUDE_CONFIG_DIR", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY", "https_proxy", "http_proxy", "no_proxy", "SSL_CERT_FILE", "NODE_EXTRA_CA_CERTS", "__CF_USER_TEXT_ENCODING", "DISPLAY",
+    // Windows: Chrome and Claude Code cannot start, or cannot find the person's sign-in, without these. None holds a secret.
+    "SystemRoot", "SYSTEMROOT", "windir", "SystemDrive", "ComSpec", "PATHEXT", "TEMP", "TMP", "USERPROFILE", "USERNAME", "HOMEDRIVE", "HOMEPATH", "APPDATA", "LOCALAPPDATA", "ProgramData", "ProgramFiles", "ProgramFiles(x86)", "ProgramW6432", "CommonProgramFiles", "NUMBER_OF_PROCESSORS", "PROCESSOR_ARCHITECTURE", "OS",
+  ],
 } as const;
 
 /** The environment for a child process: the allowed names only, plus what the caller adds on purpose. */

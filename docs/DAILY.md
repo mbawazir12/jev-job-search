@@ -34,7 +34,7 @@ cp data/policy.example.json data/policy.json
 | Field | What it means | Left empty |
 |---|---|---|
 | `target` | Applications a day. At most 25 | 15 |
-| `where` | Where a job may be: `vancouver`, `canada`, `remote`, `us`, `international`, `unclear` | anywhere your search kept |
+| `where` | Where a job may be, from your profile: `local` (your cities), `home` (the rest of your country), `remote`, `authorized` (other countries you may work in), `abroad`, `unclear`. The older names `vancouver`, `canada`, `us`, `international` still work | anywhere your search kept |
 | `levels` | `internship`, `new_grad` | both |
 | `minScore` | The lowest fit score a job may have, 0 to 1 | the search's own threshold |
 | `boards` | Job boards by name: `greenhouse`, `lever`, `ashby`, `workday` and so on | every board the tool fills |

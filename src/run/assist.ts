@@ -6,6 +6,7 @@
  */
 import { spawn } from "node:child_process";
 import { ASSIST, childEnv } from "../config.js";
+import { openExternal } from "../util/platform.js";
 import type { WaitingFor } from "../jobs/queue.js";
 
 const WORDS: Record<WaitingFor, string> = {
@@ -47,13 +48,13 @@ export function notify(title: string, body: string): void {
 /** Tells the person a form waits on them and, for an emailed code, opens their mail at the search for it. */
 export function assist(job: { company: string; title: string }, waitingFor: WaitingFor, pageUrl: string): void {
   notify("jev-job-search needs you", `${job.company}: ${WORDS[waitingFor]}`);
-  if ((waitingFor === "human_code" || waitingFor === "email_link") && ASSIST.openMail && process.platform === "darwin") {
+  if ((waitingFor === "human_code" || waitingFor === "email_link") && ASSIST.openMail) {
     let host = "";
     try {
       host = new URL(pageUrl).hostname;
     } catch {
       host = "";
     }
-    if (host) run("/usr/bin/open", [mailSearchUrl(host)]);
+    if (host) openExternal(mailSearchUrl(host));
   }
 }

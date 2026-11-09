@@ -37,6 +37,17 @@ part F.
 | Would you need sponsorship to work anywhere else? | `workAuthorization.requiresSponsorshipElsewhere` |
 | One sentence that states your status, for forms that ask you to explain | `workAuthorization.statement` |
 
+Ask these two only when the person lives in Saudi Arabia or wants to work
+there:
+
+| Ask | Goes in |
+|---|---|
+| Are you a Saudi national? | Yes: add "Saudi Arabia" to `workAuthorization.citizenships` and to `authorizedCountries`. No: leave it out of `citizenships`. Postings marked "Saudi nationals only", Saudization roles and Tamheer programs are then skipped, because only nationals may apply |
+| If not a Saudi national: do you hold an Iqama, and can it be transferred to a new employer? | `workAuthorization.iqama` as `{ "holder": true, "transferable": true }`. Leave `transferable` out if unsure. Then ask how they would answer "Will you need visa sponsorship to work in Saudi Arabia?" If their answer is No, add "Saudi Arabia" to `authorizedCountries`; if Yes, leave it out. It is their call, not the tool's |
+
+Never ask for or store the national ID or Iqama number. A form that asks
+for one waits for the person to type it.
+
 These answers are never changed to suit a job. If the user is unsure of
 their status, they should check before applying.
 

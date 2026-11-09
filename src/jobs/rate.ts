@@ -7,8 +7,8 @@ import { FIT_WEIGHTS, GRADUATION_MISMATCH_MULTIPLIER, LOCATION_MULTIPLIER, RECEN
 import type { JevClient } from "../jev/client.js";
 import { choice, noul, score, scoreToUnit } from "../jev/questions.js";
 import type { Answer, ChoiceAnswer, NoulAnswer, Questions, ScoreAnswer } from "../jev/types.js";
-import { monthName, usStatus, type Profile } from "../profile/schema.js";
-import { locationTier, type LocationTier } from "./hardFilters.js";
+import { monthName, type Profile } from "../profile/schema.js";
+import { countryOfLocations, locationTier, normalizeTier, statusIn, whereOf, NOWHERE, type LocationTier, type Where } from "./hardFilters.js";
 import { ageDays, type Job } from "./normalize.js";
 import { hashOf, type KeyedCache } from "../util/cache.js";
 
@@ -26,13 +26,29 @@ function termCriteria(gradMonth: number, gradYear: number): Record<string, strin
   };
 }
 
-/** Every question for one posting, with the term and graduation wording taken from the profile. */
-export function fitQuestions(profile: Pick<Profile, "education">): Questions {
+/** Where the role is, worded for the candidate: their own cities, their country, the other countries they may work in. */
+function locationCriteria(where: Where): Record<string, string> {
+  const home = where.home ?? "the country the candidate lives in";
+  const others = where.authorized.filter((c) => !where.home || c.toLowerCase() !== where.home.toLowerCase());
+  return {
+    local: where.places.length ? `In or near ${where.places.join(", ")}` : "In the candidate's own city",
+    home: `Elsewhere in ${home}`,
+    remote: `Remote, and open to candidates in ${home}`,
+    authorized: others.length ? `In ${others.join(", ")}` : "In another country the candidate may work in without sponsorship",
+    abroad: `In any other country, or remote but restricted to a country other than ${home}`,
+    unclear: "Not stated",
+  };
+}
+
+/** Every question for one posting, with the term, graduation and location wording taken from the profile. */
+export function fitQuestions(profile: Pick<Profile, "education"> & Partial<Pick<Profile, "address" | "preferences" | "workAuthorization">>): Questions {
   const edu = profile.education[0];
   const month = edu?.gradMonth ?? 4;
   const year = edu?.gradYear ?? new Date().getUTCFullYear() + 1;
+  const where = profile.address && profile.preferences && profile.workAuthorization ? whereOf(profile as Profile) : NOWHERE;
   return {
     ...FIT_QUESTIONS,
+    location_tier: choice("Where is the role?", locationCriteria(where)),
     term: choice("Which term or start does this posting target?", termCriteria(month, year)),
     graduation_excluded: noul(`Does the posting require a graduation date or year of study that a candidate graduating in ${monthName(month)} ${year} does not meet?`, {
       true: `It names a graduation window, class year or "returning to school after" rule that excludes ${monthName(month)} ${year}`,
@@ -41,40 +57,44 @@ export function fitQuestions(profile: Pick<Profile, "education">): Questions {
   };
 }
 
+/** What a posting asks about the right to work, in any country. */
+const WORK_AUTH: Record<string, string> = {
+  open: "The posting says anyone may apply, or asks for nothing beyond being able to work in the role's country",
+  sponsors: "The posting says visa sponsorship, a work visa or an Iqama transfer is available or possible",
+  no_sponsorship: "Applicants must already be allowed to work in the role's country: no sponsorship, no visa, or a transferable Iqama required",
+  nationals_only: "Only citizens or nationals of the role's country may apply: US citizenship, a security clearance or ITAR, \"Saudi nationals only\", Saudization, a Tamheer program, or the like",
+  remote_global: "Remote and open to candidates in any country",
+  unclear: "Not stated and not inferable",
+};
+
+/** The work_auth choices earlier versions asked, as this version names them, so a stored rating still reads right. */
+const LEGACY_WORK_AUTH: Record<string, string> = {
+  canada_ok: "open",
+  us_sponsors: "sponsors",
+  us_no_sponsorship: "no_sponsorship",
+  us_citizenship_required: "nationals_only",
+};
+
 export const FIT_QUESTIONS: Questions = {
   is_software_role: noul("Is this a software engineering or software developer role (writing application, backend, frontend, mobile, infrastructure or platform code)?", {
     true: "The day-to-day work is writing software",
     false: "Hardware, data science, analytics, product, research, IT support, or anything else",
   }),
   level: choice("What level is this posting?", {
-    internship: "Internship, co-op, student or work term",
-    new_grad: "New grad, early career, entry level, or junior with 0 to 2 years",
+    internship: "Internship, co-op, cooperative training (التدريب التعاوني), summer training, student, trainee or work term",
+    new_grad: "New grad, fresh graduate, graduate development program, Tamheer, early career, entry level, or junior with 0 to 2 years",
     experienced: "Requires 3 or more years of professional experience, or is mid, senior or staff",
     other: "Unclear or not a job posting",
   }),
   is_unpaid: noul("Does the posting say the role is unpaid, volunteer, or for academic credit only?"),
   needs_advanced_degree: noul("Does the posting require (not merely prefer) a Master's degree or PhD?"),
-  work_auth: choice("What does the posting require for work authorization?", {
-    canada_ok: "Canadian work authorization is enough, or the role is in Canada with no restriction stated",
-    us_sponsors: "The role is in the United States and the posting says sponsorship is available or possible",
-    us_no_sponsorship: "The role is in the United States and the posting says no sponsorship, or must be authorized without sponsorship",
-    us_citizenship_required: "US citizenship, a security clearance, or ITAR eligibility is required",
-    remote_global: "Remote and open to candidates in any country",
-    unclear: "Not stated and not inferable",
-  }),
+  work_auth: choice("What does the posting require for the right to work in the role's country?", WORK_AUTH),
   term: choice("Which term or start does this posting target?", termCriteria(4, new Date().getUTCFullYear() + 1)),
   graduation_excluded: noul("Does the posting require a graduation date or year of study the candidate does not meet?"),
   returning_student_required: noul("Does the posting require the candidate to return to school after the internship?"),
   stack_match: score("How well does the candidate's technical stack match what the posting asks for?", LEVELS5),
   experience_match: score("How well does the candidate's experience level and background match what the posting asks for?", LEVELS5),
-  location_tier: choice("Where is the role?", {
-    vancouver: "Vancouver or the Lower Mainland, BC",
-    canada: "Elsewhere in Canada",
-    remote: "Remote, and not restricted to the United States",
-    us: "In the United States, or remote restricted to the United States",
-    international: "Outside Canada and the United States",
-    unclear: "Not stated",
-  }),
+  location_tier: choice("Where is the role?", locationCriteria(NOWHERE)),
   interview_practical: noul("Does the posting describe a practical interview process (take-home, pair programming, project review, or AI tools permitted) rather than algorithm puzzles?"),
   callback_likelihood: score("Given everything, how likely is this candidate to be invited to interview if they apply?", [
     "Very unlikely", "Unlikely", "Possible", "Likely", "Very likely",
@@ -106,6 +126,7 @@ export function buildFitState(job: Job, profile: Profile, now = new Date()): Rec
       description: job.description || "(no description available; judge from the title and company)",
     },
     candidate: {
+      lives_in: [profile.address.city, profile.address.country].filter(Boolean).join(", "),
       summary: profile.summary,
       skills: profile.skills,
       facts: profile.facts,
@@ -136,26 +157,36 @@ export async function rateJob(jev: JevClient, job: Job, profile: Profile, now = 
     answers = await jev.decide(buildFitState(job, profile, now), fitQuestions(profile), `rate:${job.company}:${job.title}`);
     cache?.set(key, answers);
   }
-  return scoreFromAnswers(job, answers, now, usStatus(profile));
+  return scoreFromAnswers(job, answers, now, whereOf(profile));
 }
 
-export function scoreFromAnswers(job: Job, answers: Record<string, Answer>, now = new Date(), us: { authorized: boolean; citizen: boolean } = { authorized: false, citizen: false }): FitResult {
+export function scoreFromAnswers(job: Job, answers: Record<string, Answer>, now = new Date(), where: Where = NOWHERE): FitResult {
   // A rating saved before a question existed simply lacks it; that reads as "no".
   const n = (k: string) => (answers[k] as NoulAnswer | undefined)?.noul ?? 0;
   const c = (k: string) => answers[k] as ChoiceAnswer;
   const s = (k: string) => answers[k] as ScoreAnswer;
   const reasons: string[] = [];
 
-  const codeTier = locationTier(job.locations);
-  const tier: LocationTier = codeTier !== "unclear" ? codeTier : (c("location_tier").choice as LocationTier);
+  const codeTier = locationTier(job.locations, where);
+  const tier: LocationTier = codeTier !== "unclear" ? codeTier : normalizeTier(c("location_tier")?.choice);
+  // The role's country, when the locations name it. Otherwise the tier says whether the candidate may work there.
+  const country = countryOfLocations(job.locations);
+  const place = country === "United States" ? "US" : (country ?? "that country");
+  const knownCountry = country !== null || tier === "local" || tier === "home" || tier === "authorized" || tier === "abroad";
+  const status = country
+    ? statusIn(where, country)
+    : { authorized: tier === "local" || tier === "home" || tier === "authorized", citizen: (tier === "local" || tier === "home") && !!where.home && statusIn(where, where.home).citizen };
+  const auth = c("work_auth") as ChoiceAnswer | undefined;
+  const authChoice = auth ? (LEGACY_WORK_AUTH[auth.choice] ?? auth.choice) : "unclear";
+  const authSure = (auth?.confidence ?? 0) >= 0.5;
 
   let skipReason: string | null = null;
   if (n("is_software_role") < 0.5) skipReason = "not a software role";
   else if (c("level").choice === "experienced" && c("level").confidence >= 0.6) skipReason = "requires professional experience";
   else if (n("is_unpaid") > 0.7) skipReason = "unpaid";
   else if (n("needs_advanced_degree") > 0.7) skipReason = "advanced degree required";
-  else if (c("work_auth").choice === "us_no_sponsorship" && c("work_auth").confidence >= 0.5 && !us.authorized) skipReason = "US role, no sponsorship";
-  else if (c("work_auth").choice === "us_citizenship_required" && c("work_auth").confidence >= 0.5 && !us.citizen) skipReason = "US citizenship or clearance required";
+  else if (authChoice === "no_sponsorship" && authSure && knownCountry && !status.authorized) skipReason = `${place} role, no sponsorship`;
+  else if (authChoice === "nationals_only" && authSure && knownCountry && !status.citizen) skipReason = `${place} citizenship or nationality required`;
   else if (job.ats === "other" && n("needs_account") > 0.9) skipReason = "needs an account to apply";
   else if (n("requires_references") > 0.85) skipReason = "references required";
 
@@ -177,8 +208,9 @@ export function scoreFromAnswers(job: Job, answers: Record<string, Answer>, now 
   const gradExcluded = n("graduation_excluded") > 0.7;
   const scoreValue = Math.round(base * LOCATION_MULTIPLIER[tier] * recency * (gradExcluded ? GRADUATION_MISMATCH_MULTIPLIER : 1) * 1000) / 1000;
 
-  if (c("work_auth").choice === "us_sponsors" && !us.authorized) reasons.push("US role, sponsorship offered");
-  if (c("work_auth").choice === "unclear" && tier === "us" && !us.authorized) reasons.push("US role, sponsorship not stated");
+  if (authChoice === "sponsors" && !status.authorized) reasons.push(`${place} role, sponsorship offered`);
+  if (authChoice === "unclear" && tier === "abroad" && !status.authorized) reasons.push(`${place} role, sponsorship not stated`);
+  if (!knownCountry && (authChoice === "no_sponsorship" || authChoice === "nationals_only")) reasons.push("asks for the right to work in a country the posting does not name");
   if (gradExcluded) reasons.push("asks for a different graduation date");
   if (n("returning_student_required") > 0.6) reasons.push("may require returning to school after the term");
   if (n("interview_practical") > 0.6) reasons.push("practical interview process");
